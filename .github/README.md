@@ -1,6 +1,6 @@
 # Hackathon Voting System
 
-This repository includes GitHub Actions workflows for managing hackathon topic voting.
+GitHub Actions workflows for managing hackathon topic voting.
 
 ## Workflows
 
@@ -8,33 +8,33 @@ This repository includes GitHub Actions workflows for managing hackathon topic v
 
 Initiates the voting phase:
 1. Creates a GitHub Discussion for voting
-2. Adds a comment for each topic issue in the discussion
+2. Adds a comment for each open issue in the discussion
 3. Each comment includes the issue title, description preview, and voting instructions
 
 ### Close Voting (`close-voting.yml`)
 
 Closes voting and tallies results:
-1. Counts 👍 reactions on each topic comment (votes)
-2. Collects 🚀 reactions to determine team assignments
-3. Updates the discussion body with ranked results
-4. Assigns users who reacted with 🚀 to their respective issues
+1. Automatically finds the active voting discussion
+2. Counts upvotes on each topic comment
+3. Collects 🚀 reactions to determine team assignments
+4. Updates the discussion body with ranked results
+5. Assigns users who reacted with 🚀 to their respective issues
 
 ## How to Vote
 
 1. Go to the voting discussion
 2. Find the comment for the topic you're interested in
-3. React with:
-   - 👍 = I want this topic to happen (vote)
-   - 🚀 = I want to work on this topic (you'll be assigned when voting closes)
+3. **Upvote** the comment to vote for the topic
+4. **React with 🚀** if you want to work on it (you'll be assigned when voting closes)
 
-## Usage
+## Setup
 
 ### Prerequisites
 
 - GitHub Discussions must be enabled for the repository
 - A Personal Access Token (PAT) with discussion permissions
 
-### Setting Up the Discussion Token (Required)
+### Setting Up the Discussion Token
 
 1. **Create a Fine-grained PAT:**
    - Go to https://github.com/settings/tokens?type=beta
@@ -53,16 +53,17 @@ Closes voting and tallies results:
    - **Name:** `DISCUSSION_TOKEN`
    - **Secret:** Paste the token
 
+## Usage
+
 ### Starting Voting
 
 1. Go to **Actions** → **"Start Hackathon Voting"**
 2. Click **"Run workflow"**
-3. Enter the hackathon label (e.g., `hackathon-2025-autumn`)
-4. Optionally specify a discussion category (default: `General`)
+3. (Optional) Change the discussion category
+4. Done! A voting discussion is created with all open issues as topics.
 
 ### Closing Voting
 
 1. Go to **Actions** → **"Close Hackathon Voting"**
 2. Click **"Run workflow"**
-3. Enter the hackathon label
-4. Enter the discussion number (from the URL)
+3. Done! Results are posted and team members are assigned.

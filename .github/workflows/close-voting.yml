@@ -2,15 +2,6 @@ name: Close Hackathon Voting
 
 on:
   workflow_dispatch:
-    inputs:
-      hackathon_label:
-        description: 'Label to filter hackathon topic issues (e.g., hackathon-2025-autumn)'
-        required: true
-        type: string
-      discussion_number:
-        description: 'Discussion number to update with voting results'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -26,24 +17,26 @@ jobs:
         with:
           github-token: ${{ secrets.DISCUSSION_TOKEN }}
           script: |
-            const label = '${{ inputs.hackathon_label }}';
-            const discussionNumber = parseInt('${{ inputs.discussion_number }}');
-            
-            // Get discussion and its comments with reactions
-            const discussionQuery = `
-              query($owner: String!, $repo: String!, $number: Int!) {
+            // Find the active voting discussion by searching for the marker
+            const searchQuery = `
+              query($owner: String!, $repo: String!) {
                 repository(owner: $owner, name: $repo) {
-                  discussion(number: $number) {
-                    id
-                    comments(first: 100) {
-                      nodes {
-                        id
-                        body
-                        reactions(first: 100) {
-                          nodes {
-                            content
-                            user {
-                              login
+                  discussions(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes {
+                      id
+                      number
+                      body
+                      comments(first: 100) {
+                        nodes {
+                          id
+                          body
+                          upvoteCount
+                          reactions(first: 100) {
+                            nodes {
+                              content
+                              user {
+                                login
+                              }
                             }
                           }
                         }
@@ -54,19 +47,23 @@ jobs:
               }
             `;
             
-            const discussionResult = await github.graphql(discussionQuery, {
+            const searchResult = await github.graphql(searchQuery, {
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              number: discussionNumber
+              repo: context.repo.repo
             });
             
-            if (!discussionResult.repository.discussion) {
-              throw new Error(`Discussion #${discussionNumber} not found`);
+            // Find discussion with active voting marker
+            const discussion = searchResult.repository.discussions.nodes.find(
+              d => d.body && d.body.includes('<!-- hackathon-voting-discussion-active -->')
+            );
+            
+            if (!discussion) {
+              throw new Error('No active voting discussion found. Make sure voting has been started.');
             }
             
-            const discussion = discussionResult.repository.discussion;
-            const comments = discussion.comments.nodes;
+            console.log(`Found active voting discussion #${discussion.number}`);
             
+            const comments = discussion.comments.nodes;
             console.log(`Found ${comments.length} comments in discussion`);
             
             // Parse voting comments and count votes
@@ -79,13 +76,12 @@ jobs:
               if (!match) continue;
               
               const issueNumber = parseInt(match[1]);
-              const reactions = comment.reactions.nodes;
               
-              // Count votes (thumbs up)
-              const votes = reactions.filter(r => r.content === 'THUMBS_UP').length;
+              // Use upvoteCount for votes
+              const votes = comment.upvoteCount || 0;
               
-              // Get users who want to work on this (rocket)
-              const assignees = reactions
+              // Get users who want to work on this (rocket reaction)
+              const assignees = comment.reactions.nodes
                 .filter(r => r.content === 'ROCKET')
                 .map(r => r.user.login);
               
@@ -148,6 +144,7 @@ jobs:
             
             resultsBody += `\n---\n`;
             resultsBody += `*Thank you for participating! Team members have been assigned to their respective issues.*\n`;
+            resultsBody += `\n<!-- hackathon-voting-discussion-closed -->\n`;
             
             // Update the discussion body with results
             const updateMutation = `
@@ -166,7 +163,7 @@ jobs:
               body: resultsBody
             });
             
-            console.log(`Updated discussion #${discussionNumber} with voting results`);
+            console.log(`Updated discussion #${discussion.number} with voting results`);
             
             // Assign users to issues based on 🚀 reactions
             for (const item of issueAssignees) {
@@ -184,3 +181,4 @@ jobs:
             }
             
             console.log('Voting closed successfully!');
+
