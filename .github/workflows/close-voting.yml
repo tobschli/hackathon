@@ -68,7 +68,6 @@ jobs:
             
             // Parse voting comments and count votes
             const issueVotes = [];
-            const issueAssignees = [];
             
             for (const comment of comments) {
               // Check if this is a topic voting comment
@@ -81,7 +80,7 @@ jobs:
               const votes = comment.upvoteCount || 0;
               
               // Get users who want to work on this (rocket reaction)
-              const assignees = comment.reactions.nodes
+              const interestedUsers = comment.reactions.nodes
                 .filter(r => r.content === 'ROCKET')
                 .map(r => r.user.login);
               
@@ -106,25 +105,38 @@ jobs:
                 title: issueTitle,
                 url: issueUrl,
                 votes: votes,
-                assignees: assignees
+                interestedUsers: interestedUsers,
+                assignedUsers: []
               });
               
-              if (assignees.length > 0) {
-                issueAssignees.push({
-                  issueNumber: issueNumber,
-                  assignees: assignees
-                });
-              }
-              
-              console.log(`Issue #${issueNumber}: ${votes} votes, ${assignees.length} assignees`);
+              console.log(`Issue #${issueNumber}: ${votes} votes, ${interestedUsers.length} interested`);
             }
             
-            // Sort by votes descending
+            // Sort by votes descending (top voted first)
             issueVotes.sort((a, b) => b.votes - a.votes);
+            
+            // Smart team assignment: assign people to top-voted topics first
+            // Each person only gets assigned to ONE topic (their highest-voted preference)
+            const assignedPeople = new Set();
+            
+            for (const issue of issueVotes) {
+              for (const user of issue.interestedUsers) {
+                if (!assignedPeople.has(user)) {
+                  issue.assignedUsers.push(user);
+                  assignedPeople.add(user);
+                }
+              }
+            }
+            
+            console.log(`\nTeam assignments (prioritizing top-voted topics):`);
+            for (const issue of issueVotes) {
+              if (issue.assignedUsers.length > 0) {
+                console.log(`  #${issue.number}: ${issue.assignedUsers.join(', ')}`);
+              }
+            }
             
             // Build results body
             let resultsBody = `# 🏆 Hackathon Topic Voting Results\n\n`;
-            resultsBody += `Voting has closed! Here are the results:\n\n`;
             resultsBody += `## 📊 Ranked Topics\n\n`;
             resultsBody += `| Rank | Topic | Votes | Team |\n`;
             resultsBody += `|:----:|:------|:-----:|:-----|\n`;
@@ -135,15 +147,13 @@ jobs:
               else if (index === 1) medal = '🥈 ';
               else if (index === 2) medal = '🥉 ';
               
-              const team = issue.assignees.length > 0 
-                ? issue.assignees.map(a => `@${a}`).join(', ')
+              const team = issue.assignedUsers.length > 0 
+                ? issue.assignedUsers.map(a => `@${a}`).join(', ')
                 : '-';
               
               resultsBody += `| ${medal}${index + 1} | [#${issue.number} - ${issue.title}](${issue.url}) | ${issue.votes} | ${team} |\n`;
             });
             
-            resultsBody += `\n---\n`;
-            resultsBody += `*Thank you for participating! Team members have been assigned to their respective issues.*\n`;
             resultsBody += `\n<!-- hackathon-voting-discussion-closed -->\n`;
             
             // Update the discussion body with results
@@ -163,22 +173,23 @@ jobs:
               body: resultsBody
             });
             
-            console.log(`Updated discussion #${discussion.number} with voting results`);
+            console.log(`\nUpdated discussion #${discussion.number} with voting results`);
             
-            // Assign users to issues based on 🚀 reactions
-            for (const item of issueAssignees) {
+            // Assign users to issues
+            for (const issue of issueVotes) {
+              if (issue.assignedUsers.length === 0) continue;
+              
               try {
                 await github.rest.issues.addAssignees({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: item.issueNumber,
-                  assignees: item.assignees
+                  issue_number: issue.number,
+                  assignees: issue.assignedUsers
                 });
-                console.log(`Assigned ${item.assignees.join(', ')} to issue #${item.issueNumber}`);
+                console.log(`Assigned ${issue.assignedUsers.join(', ')} to issue #${issue.number}`);
               } catch (error) {
-                console.log(`Warning: Could not assign users to issue #${item.issueNumber}: ${error.message}`);
+                console.log(`Warning: Could not assign users to issue #${issue.number}: ${error.message}`);
               }
             }
             
-            console.log('Voting closed successfully!');
-
+            console.log('\nVoting closed successfully!');
