@@ -1,6 +1,6 @@
 # Hackathon Voting System
 
-This directory contains the Go-based tooling for managing hackathon topic voting via GitHub Actions.
+This directory contains tooling for managing hackathon topic voting via GitHub Actions.
 
 ## Overview
 
@@ -21,12 +21,12 @@ The voting system consists of two GitHub Actions workflows:
 When topic collection ends, an organizer triggers the "Start Hackathon Voting" workflow:
 
 1. The workflow adds a voting comment to each open issue with the specified label
-2. The voting comment includes instructions for participants to vote with 👍
+2. The voting comment is automatically pinned to the issue
 3. A GitHub Discussion is created listing all topics with links
 
 Participants vote by:
 - Going to each topic issue
-- Adding a 👍 reaction to the voting comment
+- Adding a 👍 reaction to the pinned voting comment
 
 ### Results Phase
 
@@ -34,7 +34,7 @@ When voting ends, an organizer triggers the "Close Hackathon Voting" workflow:
 
 1. The workflow counts 👍 reactions on each voting comment
 2. Topics are ranked by vote count
-3. Results are posted to the voting discussion
+3. The discussion body is updated with the ranked results
 
 ## Usage
 
@@ -84,7 +84,38 @@ The default `GITHUB_TOKEN` cannot create/update discussions via GraphQL. You mus
    - `discussion_number`: The number of the voting discussion (visible in the URL)
 4. Click "Run workflow"
 
-## Local Development
+## Technical Details
+
+### Voting Comment Marker
+
+Voting comments contain a hidden HTML marker to identify them:
+
+```html
+<!-- hackathon-voting-comment -->
+```
+
+This allows the workflow to locate the correct comment when counting votes.
+
+### Permissions Required
+
+The GitHub Actions workflows require a PAT (`DISCUSSION_TOKEN`) with:
+- **Discussions:** Read and write
+- **Issues:** Read and write
+
+### Troubleshooting
+
+**"Resource not accessible by integration"**
+- Ensure you created the `DISCUSSION_TOKEN` secret (see setup above)
+- Verify the PAT has `Discussions: Read and write` permission
+- Check that the PAT hasn't expired
+
+**"Discussion category not found"**
+- Ensure GitHub Discussions is enabled for the repository
+- Verify the category name matches exactly (case-insensitive)
+
+## Local Development (Optional)
+
+The Go tool in this directory is provided for local testing. The GitHub Actions workflows handle everything automatically.
 
 ### Building
 
@@ -106,7 +137,7 @@ export GITHUB_TOKEN="your-github-token"
   -repo=hackathon \
   -label=hackathon-2025-autumn
 
-# Close voting (discussion ID needed)
+# Close voting
 ./voting-tool \
   -command=close-voting \
   -owner=gardener-community \
@@ -114,40 +145,3 @@ export GITHUB_TOKEN="your-github-token"
   -label=hackathon-2025-autumn \
   -discussion-id=D_xxxxx
 ```
-
-## Technical Details
-
-### Dependencies
-
-- [google/go-github](https://github.com/google/go-github) - GitHub API client for Go
-- [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2) - OAuth2 support
-
-### Voting Comment Marker
-
-Voting comments contain a hidden HTML marker to identify them:
-
-```html
-<!-- hackathon-voting-comment -->
-```
-
-This allows the tool to locate the correct comment when counting votes.
-
-### Permissions Required
-
-The GitHub Actions workflows require:
-- `contents: read` - To checkout the repository
-- `issues: write` - To create voting comments
-- `discussions: write` - To create/update discussions
-
-### Troubleshooting
-
-**"Resource not accessible by integration"**
-- Ensure you created the `DISCUSSION_TOKEN` secret (see setup above)
-- Verify the PAT has `Discussions: Read and write` permission
-- Check that the PAT hasn't expired
-
-**"Discussion category not found"**
-- Ensure GitHub Discussions is enabled for the repository
-- Verify the category name matches exactly (case-insensitive)
-
-
