@@ -1,0 +1,90 @@
+name: Hackathon Topic Proposal
+description: Propose a topic for the upcoming Gardener Hackathon
+title: "[Topic] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 📝 Hackathon Topic Proposal
+        
+        Thank you for proposing a topic for the hackathon! Please fill out the form below.
+        
+        **Note:** After the topic collection phase ends, a voting comment will be automatically added to this issue. Participants can then vote by reacting with 👍 to that comment.
+
+  - type: input
+    id: title
+    attributes:
+      label: Topic Title
+      description: A short, descriptive title for your topic
+      placeholder: e.g., "Implement Gardener Dashboard Dark Mode"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the topic in detail. What problem does it solve? What's the goal?
+      placeholder: |
+        Describe what you want to work on...
+        - What problem does this solve?
+        - What is the expected outcome?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope & Deliverables
+      description: What do you expect to accomplish during the hackathon week?
+      placeholder: |
+        - [ ] Deliverable 1
+        - [ ] Deliverable 2
+        - [ ] Stretch goal
+
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Estimated Difficulty
+      description: How complex do you think this topic is?
+      options:
+        - Easy (good for newcomers)
+        - Medium
+        - Hard (requires deep expertise)
+    validations:
+      required: true
+
+  - type: input
+    id: team_size
+    attributes:
+      label: Ideal Team Size
+      description: How many people would be ideal for this topic?
+      placeholder: e.g., "2-4"
+
+  - type: textarea
+    id: prerequisites
+    attributes:
+      label: Prerequisites / Required Knowledge
+      description: What skills or knowledge would be helpful?
+      placeholder: |
+        - Go programming
+        - Kubernetes experience
+        - etc.
+
+  - type: textarea
+    id: resources
+    attributes:
+      label: Resources & References
+      description: Links to relevant documentation, issues, or prior discussions
+      placeholder: |
+        - https://github.com/gardener/gardener/issues/...
+        - https://gardener.cloud/docs/...
+
+  - type: checkboxes
+    id: acknowledgments
+    attributes:
+      label: Acknowledgments
+      options:
+        - label: I understand that topics are subject to voting and team formation preferences
+          required: true

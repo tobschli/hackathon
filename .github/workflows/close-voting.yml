@@ -1,0 +1,215 @@
+name: Close Hackathon Voting
+
+on:
+  workflow_dispatch:
+    inputs:
+      hackathon_label:
+        description: 'Label to filter hackathon topic issues (e.g., hackathon-2025-autumn)'
+        required: true
+        type: string
+      discussion_number:
+        description: 'Discussion number to update with voting results'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+  discussions: write
+
+jobs:
+  close-voting:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        working-directory: tools/voting
+        run: go mod download
+
+      - name: Build voting tool
+        working-directory: tools/voting
+        run: go build -o voting-tool .
+
+      - name: Count votes and update discussion
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DISCUSSION_TOKEN }}
+          script: |
+            const label = '${{ inputs.hackathon_label }}';
+            const discussionNumber = parseInt('${{ inputs.discussion_number }}');
+            
+            // Get all open issues with the label
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 100
+            });
+            
+            // Filter out PRs
+            const topicIssues = issues.filter(issue => !issue.pull_request);
+            
+            if (topicIssues.length === 0) {
+              console.log('No issues found with label:', label);
+              return;
+            }
+            
+            console.log(`Found ${topicIssues.length} topic issues`);
+            
+            // Count votes for each issue
+            const issueVotes = [];
+            
+            for (const issue of topicIssues) {
+              // Get all comments on the issue
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100
+              });
+              
+              // Find the voting comment
+              const votingComment = comments.find(c => 
+                c.body && c.body.includes('<!-- hackathon-voting-comment -->')
+              );
+              
+              let votes = 0;
+              if (votingComment) {
+                // Get reactions on the voting comment
+                const reactions = await github.paginate(github.rest.reactions.listForIssueComment, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: votingComment.id,
+                  per_page: 100
+                });
+                
+                // Count thumbs up reactions
+                votes = reactions.filter(r => r.content === '+1').length;
+              }
+              
+              issueVotes.push({
+                number: issue.number,
+                title: issue.title,
+                url: issue.html_url,
+                votes: votes
+              });
+              
+              console.log(`Issue #${issue.number}: ${issue.title} - ${votes} votes`);
+            }
+            
+            // Sort by votes descending
+            issueVotes.sort((a, b) => b.votes - a.votes);
+            
+            // Build results body
+            let body = `# 🏆 Hackathon Topic Voting Results\n\n`;
+            body += `Voting has closed! Here are the results:\n\n`;
+            body += `## 📊 Ranked Topics\n\n`;
+            body += `| Rank | Topic | Votes |\n`;
+            body += `|:----:|:------|:-----:|\n`;
+            
+            issueVotes.forEach((issue, index) => {
+              let medal = '';
+              if (index === 0) medal = '🥇 ';
+              else if (index === 1) medal = '🥈 ';
+              else if (index === 2) medal = '🥉 ';
+              
+              body += `| ${medal}${index + 1} | [#${issue.number} - ${issue.title}](${issue.url}) | ${issue.votes} |\n`;
+            });
+            
+            body += `\n---\n`;
+            body += `*Thank you for voting! Teams will be formed based on these results and participant preferences.*\n`;
+            body += `\n<!-- hackathon-voting-results -->\n`;
+            body += `<!-- label: ${label} -->\n`;
+            
+            // Get discussion ID
+            const discussionQuery = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  discussion(number: $number) {
+                    id
+                  }
+                }
+              }
+            `;
+            
+            const discussionResult = await github.graphql(discussionQuery, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: discussionNumber
+            });
+            
+            if (!discussionResult.repository.discussion) {
+              throw new Error(`Discussion #${discussionNumber} not found`);
+            }
+            
+            // Add a comment with the results
+            const commentMutation = `
+              mutation($discussionId: ID!, $body: String!) {
+                addDiscussionComment(input: {discussionId: $discussionId, body: $body}) {
+                  comment {
+                    id
+                    url
+                  }
+                }
+              }
+            `;
+            
+            const comment = await github.graphql(commentMutation, {
+              discussionId: discussionResult.repository.discussion.id,
+              body: body
+            });
+            
+            console.log('Added voting results comment:', comment.addDiscussionComment.comment.url);
+            
+            // Also update the discussion body to include results
+            const updateMutation = `
+              mutation($discussionId: ID!, $body: String!) {
+                updateDiscussion(input: {discussionId: $discussionId, body: $body}) {
+                  discussion {
+                    id
+                    url
+                  }
+                }
+              }
+            `;
+            
+            // Get current discussion body and append results
+            const getDiscussionQuery = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  discussion(number: $number) {
+                    id
+                    body
+                  }
+                }
+              }
+            `;
+            
+            const currentDiscussion = await github.graphql(getDiscussionQuery, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: discussionNumber
+            });
+            
+            let updatedBody = currentDiscussion.repository.discussion.body;
+            
+            // Remove old "results will be posted" message
+            updatedBody = updatedBody.replace('*Voting results will be posted here once voting closes.*', '');
+            
+            // Append results
+            updatedBody += `\n\n---\n\n${body}`;
+            
+            await github.graphql(updateMutation, {
+              discussionId: discussionResult.repository.discussion.id,
+              body: updatedBody
+            });
+            
+            console.log('Updated discussion with voting results');
