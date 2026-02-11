@@ -14,7 +14,7 @@ on:
 
 permissions:
   contents: read
-  issues: read
+  issues: write
   discussions: write
 
 jobs:
@@ -48,8 +48,9 @@ jobs:
             
             console.log(`Found ${topicIssues.length} topic issues`);
             
-            // Count votes for each issue
+            // Count votes for each issue and collect voting comment IDs
             const issueVotes = [];
+            const votingCommentIds = [];
             
             for (const issue of topicIssues) {
               // Get all comments on the issue
@@ -67,6 +68,12 @@ jobs:
               
               let votes = 0;
               if (votingComment) {
+                // Store comment ID for deletion later
+                votingCommentIds.push({
+                  issueNumber: issue.number,
+                  commentId: votingComment.id
+                });
+                
                 // Get reactions on the voting comment
                 const reactions = await github.paginate(github.rest.reactions.listForIssueComment, {
                   owner: context.repo.owner,
@@ -152,3 +159,31 @@ jobs:
             });
             
             console.log(`Updated discussion #${discussionNumber} with voting results`);
+            
+            // Delete voting comments from all issues
+            for (const item of votingCommentIds) {
+              try {
+                // Unpin the comment first
+                await github.request('DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin', {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: item.commentId,
+                  headers: {
+                    'X-GitHub-Api-Version': '2022-11-28'
+                  }
+                });
+              } catch (error) {
+                // Ignore unpin errors (comment might not be pinned)
+              }
+              
+              // Delete the comment
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: item.commentId
+              });
+              
+              console.log(`Deleted voting comment from issue #${item.issueNumber}`);
+            }
+            
+            console.log('Voting closed successfully!');

@@ -16,6 +16,7 @@ Initiates the voting phase:
 Closes voting and tallies results:
 1. Counts 👍 reactions on each voting comment
 2. Updates the discussion body with ranked results
+3. Removes voting comments from all issues
 
 ## Usage
 
