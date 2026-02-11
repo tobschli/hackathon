@@ -7,16 +7,25 @@ This repository includes GitHub Actions workflows for managing hackathon topic v
 ### Start Voting (`start-voting.yml`)
 
 Initiates the voting phase:
-1. Adds a voting comment to each open issue with the specified label
-2. Pins the voting comment to each issue
-3. Creates a GitHub Discussion listing all topics
+1. Creates a GitHub Discussion for voting
+2. Adds a comment for each topic issue in the discussion
+3. Each comment includes the issue title, description preview, and voting instructions
 
 ### Close Voting (`close-voting.yml`)
 
 Closes voting and tallies results:
-1. Counts 👍 reactions on each voting comment
-2. Updates the discussion body with ranked results
-3. Removes voting comments from all issues
+1. Counts 👍 reactions on each topic comment (votes)
+2. Collects 🚀 reactions to determine team assignments
+3. Updates the discussion body with ranked results
+4. Assigns users who reacted with 🚀 to their respective issues
+
+## How to Vote
+
+1. Go to the voting discussion
+2. Find the comment for the topic you're interested in
+3. React with:
+   - 👍 = I want this topic to happen (vote)
+   - 🚀 = I want to work on this topic (you'll be assigned when voting closes)
 
 ## Usage
 

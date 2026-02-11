@@ -29,101 +29,26 @@ jobs:
             const label = '${{ inputs.hackathon_label }}';
             const discussionNumber = parseInt('${{ inputs.discussion_number }}');
             
-            // Get all open issues with the label
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: label,
-              per_page: 100
-            });
-            
-            // Filter out PRs
-            const topicIssues = issues.filter(issue => !issue.pull_request);
-            
-            if (topicIssues.length === 0) {
-              console.log('No issues found with label:', label);
-              return;
-            }
-            
-            console.log(`Found ${topicIssues.length} topic issues`);
-            
-            // Count votes for each issue and collect voting comment IDs
-            const issueVotes = [];
-            const votingCommentIds = [];
-            
-            for (const issue of topicIssues) {
-              // Get all comments on the issue
-              const comments = await github.paginate(github.rest.issues.listComments, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                per_page: 100
-              });
-              
-              // Find the voting comment
-              const votingComment = comments.find(c => 
-                c.body && c.body.includes('<!-- hackathon-voting-comment -->')
-              );
-              
-              let votes = 0;
-              if (votingComment) {
-                // Store comment ID for deletion later
-                votingCommentIds.push({
-                  issueNumber: issue.number,
-                  commentId: votingComment.id
-                });
-                
-                // Get reactions on the voting comment
-                const reactions = await github.paginate(github.rest.reactions.listForIssueComment, {
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: votingComment.id,
-                  per_page: 100
-                });
-                
-                // Count thumbs up reactions
-                votes = reactions.filter(r => r.content === '+1').length;
-              }
-              
-              issueVotes.push({
-                number: issue.number,
-                title: issue.title,
-                url: issue.html_url,
-                votes: votes
-              });
-              
-              console.log(`Issue #${issue.number}: ${issue.title} - ${votes} votes`);
-            }
-            
-            // Sort by votes descending
-            issueVotes.sort((a, b) => b.votes - a.votes);
-            
-            // Build results body
-            let resultsBody = `# 🏆 Hackathon Topic Voting Results\n\n`;
-            resultsBody += `Voting has closed! Here are the results:\n\n`;
-            resultsBody += `## 📊 Ranked Topics\n\n`;
-            resultsBody += `| Rank | Topic | Votes |\n`;
-            resultsBody += `|:----:|:------|:-----:|\n`;
-            
-            issueVotes.forEach((issue, index) => {
-              let medal = '';
-              if (index === 0) medal = '🥇 ';
-              else if (index === 1) medal = '🥈 ';
-              else if (index === 2) medal = '🥉 ';
-              
-              resultsBody += `| ${medal}${index + 1} | [#${issue.number} - ${issue.title}](${issue.url}) | ${issue.votes} |\n`;
-            });
-            
-            resultsBody += `\n---\n`;
-            resultsBody += `*Thank you for voting! Teams will be formed based on these results and participant preferences.*\n`;
-            
-            // Get discussion ID
+            // Get discussion and its comments with reactions
             const discussionQuery = `
               query($owner: String!, $repo: String!, $number: Int!) {
                 repository(owner: $owner, name: $repo) {
                   discussion(number: $number) {
                     id
+                    comments(first: 100) {
+                      nodes {
+                        id
+                        body
+                        reactions(first: 100) {
+                          nodes {
+                            content
+                            user {
+                              login
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -139,7 +64,90 @@ jobs:
               throw new Error(`Discussion #${discussionNumber} not found`);
             }
             
-            const discussionId = discussionResult.repository.discussion.id;
+            const discussion = discussionResult.repository.discussion;
+            const comments = discussion.comments.nodes;
+            
+            console.log(`Found ${comments.length} comments in discussion`);
+            
+            // Parse voting comments and count votes
+            const issueVotes = [];
+            const issueAssignees = [];
+            
+            for (const comment of comments) {
+              // Check if this is a topic voting comment
+              const match = comment.body.match(/<!-- hackathon-topic-vote:(\d+) -->/);
+              if (!match) continue;
+              
+              const issueNumber = parseInt(match[1]);
+              const reactions = comment.reactions.nodes;
+              
+              // Count votes (thumbs up)
+              const votes = reactions.filter(r => r.content === 'THUMBS_UP').length;
+              
+              // Get users who want to work on this (rocket)
+              const assignees = reactions
+                .filter(r => r.content === 'ROCKET')
+                .map(r => r.user.login);
+              
+              // Get issue details
+              let issueTitle = `Issue #${issueNumber}`;
+              let issueUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/${issueNumber}`;
+              
+              try {
+                const issueData = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber
+                });
+                issueTitle = issueData.data.title;
+                issueUrl = issueData.data.html_url;
+              } catch (error) {
+                console.log(`Warning: Could not fetch issue #${issueNumber}`);
+              }
+              
+              issueVotes.push({
+                number: issueNumber,
+                title: issueTitle,
+                url: issueUrl,
+                votes: votes,
+                assignees: assignees
+              });
+              
+              if (assignees.length > 0) {
+                issueAssignees.push({
+                  issueNumber: issueNumber,
+                  assignees: assignees
+                });
+              }
+              
+              console.log(`Issue #${issueNumber}: ${votes} votes, ${assignees.length} assignees`);
+            }
+            
+            // Sort by votes descending
+            issueVotes.sort((a, b) => b.votes - a.votes);
+            
+            // Build results body
+            let resultsBody = `# 🏆 Hackathon Topic Voting Results\n\n`;
+            resultsBody += `Voting has closed! Here are the results:\n\n`;
+            resultsBody += `## 📊 Ranked Topics\n\n`;
+            resultsBody += `| Rank | Topic | Votes | Team |\n`;
+            resultsBody += `|:----:|:------|:-----:|:-----|\n`;
+            
+            issueVotes.forEach((issue, index) => {
+              let medal = '';
+              if (index === 0) medal = '🥇 ';
+              else if (index === 1) medal = '🥈 ';
+              else if (index === 2) medal = '🥉 ';
+              
+              const team = issue.assignees.length > 0 
+                ? issue.assignees.map(a => `@${a}`).join(', ')
+                : '-';
+              
+              resultsBody += `| ${medal}${index + 1} | [#${issue.number} - ${issue.title}](${issue.url}) | ${issue.votes} | ${team} |\n`;
+            });
+            
+            resultsBody += `\n---\n`;
+            resultsBody += `*Thank you for participating! Team members have been assigned to their respective issues.*\n`;
             
             // Update the discussion body with results
             const updateMutation = `
@@ -154,36 +162,25 @@ jobs:
             `;
             
             await github.graphql(updateMutation, {
-              discussionId: discussionId,
+              discussionId: discussion.id,
               body: resultsBody
             });
             
             console.log(`Updated discussion #${discussionNumber} with voting results`);
             
-            // Delete voting comments from all issues
-            for (const item of votingCommentIds) {
+            // Assign users to issues based on 🚀 reactions
+            for (const item of issueAssignees) {
               try {
-                // Unpin the comment first
-                await github.request('DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin', {
+                await github.rest.issues.addAssignees({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  comment_id: item.commentId,
-                  headers: {
-                    'X-GitHub-Api-Version': '2022-11-28'
-                  }
+                  issue_number: item.issueNumber,
+                  assignees: item.assignees
                 });
+                console.log(`Assigned ${item.assignees.join(', ')} to issue #${item.issueNumber}`);
               } catch (error) {
-                // Ignore unpin errors (comment might not be pinned)
+                console.log(`Warning: Could not assign users to issue #${item.issueNumber}: ${error.message}`);
               }
-              
-              // Delete the comment
-              await github.rest.issues.deleteComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: item.commentId
-              });
-              
-              console.log(`Deleted voting comment from issue #${item.issueNumber}`);
             }
             
             console.log('Voting closed successfully!');
